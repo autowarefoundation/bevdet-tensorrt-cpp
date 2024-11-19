@@ -6,6 +6,8 @@
 
 </div>
 
+**NEWS**: 分支 `bevdet_vendor-ros2` 是基于分支 `one` 修改的ROS 2 版本，这个分支将BEVDet的TensorRT推理代码整理成名为`bevdet_vendor`的ROS 2包，编译后会生成`bevdet_vendor`库，用户可以创建自己的 ROS 2 节点调用`bevdet_vendor`库进行图像推理。如何使用`bevdet_vendor`库可以参考[Autoware](https://github.com/autowarefoundation/autoware.universe)的BEVDet推理节点`autoware_tensorrt_bevdet`。
+
 本项目是BEVDet的TensorRT推理实现，使用C++编程。可以在nuScenes数据集上测试，也提供了单个测试样本。BEVDet是一个基于BEV的多相机3D目标检测模型，有关BEVDet的详细说明，可以参考 [BEVDet](https://github.com/HuangJunJie2017/BEVDet)。**导出ONNX模型的脚本在这个[仓库](https://github.com/LCH1238/BEVDet)**。
 
 ![图](BEVDet-TensorRT.png)

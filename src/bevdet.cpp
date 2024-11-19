@@ -21,6 +21,7 @@ BEVDet::BEVDet(const std::string &config_file, int n_img,
                std::vector<Eigen::Matrix3f> _cams_intrin, 
                std::vector<Eigen::Quaternion<float>> _cams2ego_rot, 
                std::vector<Eigen::Translation3f> _cams2ego_trans,
+               const std::string &onnx_file,
                const std::string &engine_file) : 
                cams_intrin(_cams_intrin), 
                cams2ego_rot(_cams2ego_rot), 
@@ -29,6 +30,13 @@ BEVDet::BEVDet(const std::string &config_file, int n_img,
     InitParams(config_file);
     if(n_img != N_img){
         printf("BEVDet need %d images, but given %d images!", N_img, n_img);
+    }
+
+    if (access(engine_file.c_str(), F_OK) == 0) {
+        printf("BEVDet Inference engine prepared.");
+    } else {
+        printf("BEVDet Could not find %s, try making TensorRT engine from onnx", engine_file.c_str());
+        exportEngine(onnx_file, engine_file);
     }
     auto start = high_resolution_clock::now();
 
@@ -443,10 +451,10 @@ int BEVDet::DeserializeTRTEngine(const std::string &engine_file,
     engine_stream << file.rdbuf();
     file.close();
 
-    nvinfer1::IRuntime* runtime = nvinfer1::createInferRuntime(g_logger);
+    nvinfer1::IRuntime* runtime = nvinfer1::createInferRuntime(g_logger_);
     if (runtime == nullptr) {
         std::string msg("Failed to build runtime parser!");
-        g_logger.log(nvinfer1::ILogger::Severity::kERROR, msg.c_str());
+        g_logger_.log(nvinfer1::ILogger::Severity::kERROR, msg.c_str());
         return EXIT_FAILURE;
     }
     engine_stream.seekg(0, std::ios::end);
@@ -459,7 +467,7 @@ int BEVDet::DeserializeTRTEngine(const std::string &engine_file,
     nvinfer1::ICudaEngine *engine = runtime->deserializeCudaEngine(engine_str, engine_size, NULL);
     if (engine == nullptr) {
         std::string msg("Failed to build engine parser!");
-        g_logger.log(nvinfer1::ILogger::Severity::kERROR, msg.c_str());
+        g_logger_.log(nvinfer1::ILogger::Severity::kERROR, msg.c_str());
         return EXIT_FAILURE;
     }
     *engine_ptr = engine;
@@ -619,6 +627,80 @@ int BEVDet::DoInfer(const camsData& cam_data, std::vector<Box> &out_detections, 
     return EXIT_SUCCESS;
 }
 
+
+void BEVDet::exportEngine(const std::string & onnx_file, const std::string & trt_file)
+{
+    CHECK_CUDA(cudaSetDevice(0));
+    nvinfer1::ICudaEngine * engine = nullptr;
+    std::vector<nvinfer1::Dims32> min_shapes{
+        {4, {6, 3, 900, 400}}, {1, {3}},      {1, {3}},    {3, {1, 6, 27}}, {1, {200000}},
+        {1, {200000}},         {1, {200000}}, {1, {8000}}, {1, {8000}},     {5, {1, 8, 80, 128, 128}},
+        {3, {1, 8, 6}},        {2, {1, 1}}};
+
+    std::vector<nvinfer1::Dims32> opt_shapes{
+        {4, {6, 3, 900, 400}}, {1, {3}},      {1, {3}},     {3, {1, 6, 27}}, {1, {356760}},
+        {1, {356760}},         {1, {356760}}, {1, {13360}}, {1, {13360}},    {5, {1, 8, 80, 128, 128}},
+        {3, {1, 8, 6}},        {2, {1, 1}}};
+
+    std::vector<nvinfer1::Dims32> max_shapes{
+        {4, {6, 3, 900, 400}}, {1, {3}},      {1, {3}},     {3, {1, 6, 27}}, {1, {370000}},
+        {1, {370000}},         {1, {370000}}, {1, {14000}}, {1, {14000}},    {5, {1, 8, 80, 128, 128}},
+        {3, {1, 8, 6}},        {2, {1, 1}}};
+    nvinfer1::IBuilder * builder = nvinfer1::createInferBuilder(g_logger_);
+    nvinfer1::INetworkDefinition * network = builder->createNetworkV2(1U << int(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH));
+    nvinfer1::IOptimizationProfile * profile = builder->createOptimizationProfile();
+    nvinfer1::IBuilderConfig * config = builder->createBuilderConfig();
+    config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, 3UL << 32UL);
+
+    config->setFlag(nvinfer1::BuilderFlag::kFP16);
+
+    nvonnxparser::IParser * parser = nvonnxparser::createParser(*network, g_logger_);
+
+    if (!parser->parseFromFile(onnx_file.c_str(), static_cast<int>(g_logger_.reportable_severity))) {
+        printf("BEVDet Failed parsing .onnx file!");
+    for (int i = 0; i < parser->getNbErrors(); ++i) {
+        auto * error = parser->getError(i);
+        printf("BEVDet Error code: %d, Description: %s", static_cast<int>(error->code()), error->desc());
+    }
+        return;
+    }
+    printf("BEVDet Succeeded parsing .onnx file!");
+
+    for (size_t i = 0; i < min_shapes.size(); i++) {
+        nvinfer1::ITensor * it = network->getInput(i);
+        profile->setDimensions(it->getName(), nvinfer1::OptProfileSelector::kMIN, min_shapes[i]);
+        profile->setDimensions(it->getName(), nvinfer1::OptProfileSelector::kOPT, opt_shapes[i]);
+        profile->setDimensions(it->getName(), nvinfer1::OptProfileSelector::kMAX, max_shapes[i]);
+    }
+    config->addOptimizationProfile(profile);
+
+    nvinfer1::IHostMemory * engineString = builder->buildSerializedNetwork(*network, *config);
+    if (engineString == nullptr || engineString->size() == 0) {
+        printf("BEVDet Failed building serialized engine!");
+        return;
+    }
+    printf("BEVDet Succeeded building serialized engine!");
+
+    nvinfer1::IRuntime * runtime{nvinfer1::createInferRuntime(g_logger_)};
+    engine = runtime->deserializeCudaEngine(engineString->data(), engineString->size());
+    if (engine == nullptr) {
+        printf("BEVDet Failed building engine!");
+        return;
+    }
+    printf("BEVDet Succeeded building engine!");
+
+    std::ofstream engineFile(trt_file, std::ios::binary);
+    if (!engineFile) {
+        printf("BEVDet Failed opening file to write");
+        return;
+    }
+    engineFile.write(static_cast<char *>(engineString->data()), engineString->size());
+    if (engineFile.fail()) {
+        printf("BEVDet Failed saving .engine file!");
+        return;
+    }
+    printf("BEVDet Succeeded saving .engine file!");
+}
 
 BEVDet::~BEVDet(){
 

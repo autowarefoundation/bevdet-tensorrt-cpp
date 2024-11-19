@@ -13,122 +13,131 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.1.0)
-project(demo LANGUAGES CXX CUDA)
+# Copyright 2024 AutoCore, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-find_package(CUDA REQUIRED)
+cmake_minimum_required(VERSION 3.14.0)
+project(bevdet_vendor)
+
+add_compile_options(-std=c++17)
+set(CMAKE_CXX_FLAGS_RELEASE "-Wno-deprecated-declarations -O2")
+set(CMAKE_BUILD_TYPE "RELEASE")
+
+find_package(ament_cmake REQUIRED)
+find_package(cudnn_cmake_module REQUIRED)
+find_package(tensorrt_cmake_module REQUIRED)
+find_package(rclcpp REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(Eigen3 REQUIRED)
 
-
-if(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL  "aarch64")
-  set(CMAKE_C_COMPILER /usr/bin/aarch64-linux-gnu-gcc)
-  set(CMAKE_CXX_COMPILER /usr/bin/aarch64-linux-gnu-g++)
-  set(CUDA_INSTALL_TARGET_DIR targets/aarch64-linux)
-elseif(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "x86_64")
-  set(CMAKE_C_COMPILER /usr/bin/gcc)
-  set(CMAKE_CXX_COMPILER /usr/bin/g++)
-  set(CUDA_INSTALL_TARGET_DIR targets/x86_64-linux)
+find_package(CUDA REQUIRED)
+find_package(CUDAToolkit)
+find_package(CUDNN)
+find_package(TENSORRT)
+if(NOT (CUDAToolkit_FOUND AND CUDNN_FOUND AND TENSORRT_FOUND))
+  message(WARNING "cuda, cudnn, tensorrt libraries are not found")
+  return()
 endif()
 
-set(CUDA_TOOLKIT_ROOT_DIR /usr/local/cuda)
-set(CUDA_INCLUDE_DIRS ${CUDA_TOOLKIT_ROOT_DIR}/${CUDA_INSTALL_TARGET_DIR}/include)
+set(bevdet_header_files
+  include/bevdet.h
 
-set(CMAKE_BUILD_TYPE "RELEASE")
+  include/preprocess.h
+  include/iou3d_nms.h
+  include/postprocess.h
+  include/data.h
+  include/cpu_jpegdecoder.h
+  include/nvjpegdecoder.h
 
-set(CMAKE_CXX_FLAGS_RELEASE "-Wno-deprecated-declarations -O2")
-
-add_compile_options(-W)
-add_compile_options(-std=c++11)
-
-# set( SMS 30 32 35 37 50 52 53 60 61 62 70 72 75 86 87)
-# foreach(sm ${SMS})
-	# set(GENCODE ${GENCODE} -gencode arch=compute_${sm},code=sm_${sm})
-# endforeach()
-# set(HIGHEST_SM 87)
-# set(GENCODE ${GENCODE} -gencode arch=compute_${HIGHEST_SM},code=compute_${HIGHEST_SM})
-
-# set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS}
-#   -ccbin ${CMAKE_CXX_COMPILER}"
-# )
-set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -std=c++11 -O0 -Xcompiler -fPIC -g -w -gencode=arch=compute_86,code=sm_86")
-
-
-
-if(${CMAKE_BUILD_TYPE} STREQUAL "DEBUG")
-  message("Using Debug Mode")
-  set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -g -G --ptxas-options=-v)
-endif()
-
-
-if(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL  "aarch64")       # orin
-  set(TENSORRT_INCLUDE_DIRS /usr/include/aarch64-linux-gnu/)
-  set(TENSORRT_LIBRARY_DIRS /usr/lib/aarch64-linux-gnu/)
-elseif(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "x86_64")
-  set(TENSORRT_INCLUDE_DIRS /root/TensorRT-8.5.2.2/include)  # your tensorrt path
-  set(TENSORRT_LIBRARY_DIRS /root/TensorRT-8.5.2.2/lib)
-endif()
-
-
-set(CUDA_LIB_DIRS ${CUDA_TOOLKIT_ROOT_DIR}/${CUDA_INSTALL_TARGET_DIR}/lib)
-find_library(NVJPEG_LIBRARY nvjpeg ${CUDA_LIB_DIRS})
-if(NVJPEG_LIBRARY)
-  add_definitions(-D__HAVE_NVJPEG__)
-  link_libraries(${NVJPEG_LIBRARY})
-  message(STATUS ${NVJPEG_LIBRARY})
-endif()
-
-
-include_directories(
-  ${CUDA_INCLUDE_DIRS}
-  ${TENSORRT_INCLUDE_DIRS}
-  ${YAML_CPP_INCLUDE_DIRS}
-  ${PROJECT_SOURCE_DIR}/include
-  ${EIGEN3_INCLUDE_DIRS}
+  include/preprocess_plugin.h
+  include/bevpool_plugin.h
+  include/alignbev_plugin.h
+  include/gatherbev_plugin.h
+  include/common.h
 )
 
-link_directories(
-	${TENSORRT_LIBRARY_DIRS}
-)
+set(bevdet_source_files
+  src/bevdet.cpp
 
-cuda_add_executable(bevdemo 
-    demo_bevdet.cpp 
-    src/bevdet.cpp 
-    src/preprocess.cu 
-    src/iou3d_nms.cu
-    src/postprocess.cu
-    src/data.cpp
-    src/cpu_jpegdecoder.cpp
-    src/nvjpegdecoder.cpp
+  src/preprocess.cu
+  src/iou3d_nms.cu
+  src/postprocess.cu
+  src/data.cpp
+  src/cpu_jpegdecoder.cpp
+  src/nvjpegdecoder.cpp
 
-    src/preprocess_plugin.cu
-    src/bevpool_plugin.cu
-    src/alignbev_plugin.cu
-    src/gatherbev_plugin.cu
-)
-
-target_link_libraries(bevdemo 
-    yaml-cpp 
-    libnvinfer.so
-    libjpeg.so
-)
-
-
-cuda_add_executable(export 
-  tools/export_engine.cu
   src/preprocess_plugin.cu
   src/bevpool_plugin.cu
   src/alignbev_plugin.cu
   src/gatherbev_plugin.cu
 )
 
-target_link_libraries(export 
-  libnvinfer.so
-  libnvonnxparser.so
-  libz.so
+add_library(${PROJECT_NAME} SHARED
+  ${bevdet_header_files}
+  ${bevdet_source_files}
 )
 
-# cuda_add_library(preprocess_plugin SHARED src/preprocess_plugin.cu)
-# cuda_add_library(bevpool_plugin SHARED src/bevpool_plugin.cu)
-# cuda_add_library(alignbev_plugin SHARED src/alignbev_plugin.cu)
-# cuda_add_library(gatherbev_plugin SHARED src/gatherbev_plugin.cu)
+target_include_directories(
+  ${PROJECT_NAME} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+  ${YAML_CPP_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
+)
+
+target_link_libraries(
+  ${PROJECT_NAME} PUBLIC
+  CUDA::cudart
+  yaml-cpp
+  libz.so
+  libjpeg.so
+  rclcpp::rclcpp
+  ${NVINFER}
+  ${TENSORRT_LIBRARIES}
+  ${CUDA_LIBRARIES}
+  ${CUBLAS_LIBRARIES}
+  ${CUDNN_LIBRARY}
+)
+
+set_target_properties(${PROJECT_NAME}
+  PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+
+install(
+  DIRECTORY include/
+  DESTINATION include/${PROJECT_NAME}
+)
+
+install(
+  TARGETS ${PROJECT_NAME}
+  EXPORT export_${PROJECT_NAME}
+)
+
+ament_export_include_directories("include/${PROJECT_NAME}")
+ament_export_targets(export_${PROJECT_NAME})
+
+ament_export_dependencies(
+  "CUDA"
+  "CUDAToolkit"
+  "cudnn_cmake_module"
+  "CUDNN"
+  "rclcpp"
+  "tensorrt_cmake_module"
+  "TENSORRT"
+)
+
+ament_package()

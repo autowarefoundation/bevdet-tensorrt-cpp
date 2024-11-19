@@ -6,6 +6,8 @@ English | [简体中文](doc/README_zh-CN.md)
 
 </div>
 
+**NEWS**: The branch `bevdet_vendor-ros2` is a ROS 2 version modified based on the branch `one`. This branch organizes the TensorRT inference code of BEVDet into the ROS 2 package called `bevdet_vendor`. After compilation, it generates the `bevdet_vendor` library, and users can create their own ROS 2 node to call the `bevdet_vendor` library for image inference. How to use the `bevdet_vendor` library can refer to [Autoware](https://github.com/autowarefoundation/autoware.universe) BEVDet inference node `autoware_tensorrt_bevdet`.
+
 This project is a TensorRT implementation for BEVDet inference, written in C++. It can be tested on the nuScenes dataset and also provides a single test sample. BEVDet is a multi-camera 3D object detection model in bird's-eye view. For more details about BEVDet, please refer to the following link [BEVDet](https://github.com/HuangJunJie2017/BEVDet). **The script to export the ONNX model is in this [repository](https://github.com/LCH1238/BEVDet)**.
 
 ![图](doc/BEVDet-TensorRT.png)

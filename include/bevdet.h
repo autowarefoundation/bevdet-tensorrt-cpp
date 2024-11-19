@@ -17,7 +17,7 @@
 #include "data.h"
 
 #include "NvInfer.h"
-
+#include <NvOnnxParser.h>
 
 class adjFrame{
 public:
@@ -111,6 +111,7 @@ public:
                                     std::vector<Eigen::Matrix3f> _cams_intrin, 
                                     std::vector<Eigen::Quaternion<float>> _cams2ego_rot, 
                                     std::vector<Eigen::Translation3f> _cams2ego_trans,
+                                    const std::string & onnx_file,
                                     const std::string &engine_file);
   
     int DoInfer(const camsData &cam_data,  std::vector<Box> &out_detections, 
@@ -148,7 +149,7 @@ protected:
                             const Eigen::Translation3f &adj_ego2global_trans,
                             float* transform_dev);
 
-
+    void exportEngine(const std::string & onnx_file, const std::string & trt_file);
 
 private:
 
@@ -225,7 +226,7 @@ private:
     int transform_size;
     int cam_params_size;
 
-    Logger g_logger;
+    Logger g_logger_;
 
     nvinfer1::ICudaEngine* trt_engine;
     nvinfer1::IExecutionContext* trt_context;
