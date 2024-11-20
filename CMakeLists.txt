@@ -41,7 +41,7 @@ find_package(rclcpp REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(Eigen3 REQUIRED)
 
-find_package(CUDA REQUIRED)
+find_package(CUDA)
 find_package(CUDAToolkit)
 find_package(CUDNN)
 find_package(TENSORRT)
