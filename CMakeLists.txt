@@ -50,23 +50,6 @@ if(NOT (CUDAToolkit_FOUND AND CUDNN_FOUND AND TENSORRT_FOUND))
   return()
 endif()
 
-set(bevdet_header_files
-  include/bevdet.h
-
-  include/preprocess.h
-  include/iou3d_nms.h
-  include/postprocess.h
-  include/data.h
-  include/cpu_jpegdecoder.h
-  include/nvjpegdecoder.h
-
-  include/preprocess_plugin.h
-  include/bevpool_plugin.h
-  include/alignbev_plugin.h
-  include/gatherbev_plugin.h
-  include/common.h
-)
-
 set(bevdet_source_files
   src/bevdet.cpp
 
@@ -83,8 +66,7 @@ set(bevdet_source_files
   src/gatherbev_plugin.cu
 )
 
-add_library(${PROJECT_NAME} SHARED
-  ${bevdet_header_files}
+cuda_add_library(${PROJECT_NAME} SHARED
   ${bevdet_source_files}
 )
 
@@ -97,13 +79,11 @@ target_include_directories(
 )
 
 target_link_libraries(
-  ${PROJECT_NAME} PUBLIC
+  ${PROJECT_NAME}
   CUDA::cudart
   yaml-cpp
-  libz.so
-  libjpeg.so
-  rclcpp::rclcpp
   ${NVINFER}
+  ${NVONNXPARSER}
   ${TENSORRT_LIBRARIES}
   ${CUDA_LIBRARIES}
   ${CUBLAS_LIBRARIES}
@@ -127,7 +107,6 @@ install(
   EXPORT export_${PROJECT_NAME}
 )
 
-ament_export_include_directories("include/${PROJECT_NAME}")
 ament_export_targets(export_${PROJECT_NAME})
 
 ament_export_dependencies(

@@ -4,7 +4,6 @@ Written by Shaoshuai Shi
 All Rights Reserved 2019-2022.
 */
 
-#include "common.h"
 #include "iou3d_nms.h"
 
 struct Point {
